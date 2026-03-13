@@ -7,12 +7,18 @@ from chromadb.utils import embedding_functions
 
 df = pd.read_csv("data/Video_Games.csv")
 df = df.fillna("Unknown")
+df["Year_of_Release"] = df["Year_of_Release"].replace({"": "0", "Unknown": "0"}).astype(float).astype(int).astype(str).replace("0", "N/A")
 
 client = chromadb.PersistentClient(path="./chroma_db")
 ef = embedding_functions.SentenceTransformerEmbeddingFunction(
     model_name="all-MiniLM-L6-v2"
 )
+try:
+    client.delete_collection("vgsales")
+except:
+    pass
 collection = client.get_or_create_collection("vgsales", embedding_function=ef)
+
 
 documents, ids = [], []
 for i, row in df.iterrows():
