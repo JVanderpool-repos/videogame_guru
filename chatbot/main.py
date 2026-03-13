@@ -65,9 +65,51 @@ def get_game_deals(game_title: str) -> str:
     except requests.exceptions.ConnectionError:
         return "Could not reach CheapShark API. Try again shortly."
 
+def get_igdb_token():
+    res = requests.post("https://id.twitch.tv/oauth2/token", params={
+        "client_id": os.getenv("IGDB_CLIENT_ID"),
+        "client_secret": os.getenv("IGDB_CLIENT_SECRET"),
+        "grant_type": "client_credentials"
+    })
+    return res.json()["access_token"]
+
+@tool
+def get_game_rankings(query: str) -> str:
+    """Get top-rated or most popular games by genre, platform, or
+    franchise. Use for questions like 'best RPGs', 'top Nintendo
+    games', or 'most popular games of all time'."""
+    try:
+        token = get_igdb_token()
+        headers = {
+            "Client-ID": os.getenv("IGDB_CLIENT_ID"),
+            "Authorization": f"Bearer {token}"
+        }
+        body = f'search "{query}"; fields name,rating,total_rating_count,summary; limit 5;'
+        res = requests.post(
+            "https://api.igdb.com/v4/games",
+            headers=headers,
+            data=body,
+            timeout=10
+        )
+        res.raise_for_status()
+        games = res.json()
+        if not games:
+            return f"No results found for '{query}'."
+        output = f"IGDB results for '{query}':\n"
+        for g in games:
+            rating = round(g.get("rating", 0), 1)
+            output += f"- {g['name']} | Rating: {rating}/100\n"
+        return output
+    except Exception as e:
+        return f"IGDB error: {str(e)}"
+
+
 if __name__ == "__main__":
     print("=== RAWG ===")
     print(search_game_info.invoke("Elden Ring"))
     print("\n=== CheapShark ===")
     print(get_game_deals.invoke("Elden Ring"))
+    print("\n=== IGDB ===")
+    print(get_game_rankings.invoke("open world RPG"))
+
 
