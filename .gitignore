@@ -69,7 +69,11 @@ logs/
 # Cache
 .cache/
 *.cache
+chroma_db/
 
 # Local development
 *.sqlite3
 *.db
+
+# React build output
+frontend/build/
