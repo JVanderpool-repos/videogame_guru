@@ -4,6 +4,8 @@ load_dotenv()
 import os
 import requests
 from langchain_core.tools import tool
+import chromadb
+from chromadb.utils import embedding_functions
 
 ## tools
 
@@ -103,6 +105,28 @@ def get_game_rankings(query: str) -> str:
     except Exception as e:
         return f"IGDB error: {str(e)}"
 
+## ChromaDB setup
+ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="all-MiniLM-L6-v2"
+)
+chroma_client = chromadb.PersistentClient(path="./chroma_db")
+collection = chroma_client.get_or_create_collection("vgsales", embedding_function=ef)
+
+@tool
+def search_sales_history(query: str) -> str:
+    """Search historical video game sales data including global sales,
+    regional sales, critic scores, and user scores. Use when the user
+    asks about best-selling games, sales figures, or wants to compare
+    commercial performance of titles."""
+    try:
+        results = collection.query(query_texts=[query], n_results=5)
+        docs = results["documents"][0]
+        if not docs:
+            return "No sales data found for that query."
+        return "Historical sales data:\n" + "\n".join(f"- {d}" for d in docs)
+    except Exception as e:
+        return f"Vector search error: {str(e)}"
+
 
 if __name__ == "__main__":
     print("=== RAWG ===")
@@ -111,5 +135,8 @@ if __name__ == "__main__":
     print(get_game_deals.invoke("Elden Ring"))
     print("\n=== IGDB ===")
     print(get_game_rankings.invoke("open world RPG"))
+    print("\n=== ChromaDB ===")
+    print(search_sales_history.invoke("best selling Nintendo games"))
+
 
 
