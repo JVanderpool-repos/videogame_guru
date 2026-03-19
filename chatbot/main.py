@@ -6,6 +6,19 @@ import requests
 from langchain_core.tools import tool
 import chromadb
 from chromadb.utils import embedding_functions
+from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
+
+# LLM
+llm = ChatOpenAI(
+    model="gpt-4o-mini",
+    api_key=os.getenv("GITHUB_TOKEN"),
+    base_url="https://models.inference.ai.azure.com"
+)
+
+
+
 
 ## tools
 
@@ -127,6 +140,18 @@ def search_sales_history(query: str) -> str:
     except Exception as e:
         return f"Vector search error: {str(e)}"
 
+tools = [search_game_info, get_game_deals, get_game_rankings, search_sales_history]
+
+memory = MemorySaver()
+
+agent_with_memory = create_agent(
+    model=llm,
+    tools=tools,
+    checkpointer=memory,
+    system_prompt="""You are Videogame Guru, an expert AI assistant for all things video games.
+    You help users find games they'll love, check deals, explore sales history, and get rankings.
+    Be enthusiastic, knowledgeable, and conversational. Always use your tools to provide accurate data."""
+)
 
 if __name__ == "__main__":
     print("=== RAWG ===")
@@ -137,6 +162,17 @@ if __name__ == "__main__":
     print(get_game_rankings.invoke("open world RPG"))
     print("\n=== ChromaDB ===")
     print(search_sales_history.invoke("best selling Nintendo games"))
-
-
+    print("\n=== AGENT TEST ===")
+    config = {"configurable": {"thread_id": "test"}}
+    response = agent_with_memory.invoke(
+        {"messages": [("user", "What is Elden Ring and is it on sale anywhere?")]},
+        config=config
+    )
+    print(response["messages"][-1].content)
+    print("\n=== MEMORY TEST ===")
+    response2 = agent_with_memory.invoke(
+        {"messages": [("user", "What platforms did you just tell me it's on?")]},
+        config=config
+    )
+    print(response2["messages"][-1].content)
 
