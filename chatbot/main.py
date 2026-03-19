@@ -17,9 +17,6 @@ llm = ChatOpenAI(
     base_url="https://models.inference.ai.azure.com"
 )
 
-
-
-
 ## tools
 
 @tool
