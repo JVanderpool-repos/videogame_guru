@@ -10,12 +10,14 @@ from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 
+
 # LLM
 llm = ChatOpenAI(
     model="gpt-4o-mini",
     api_key=os.getenv("GITHUB_TOKEN"),
     base_url="https://models.inference.ai.azure.com"
 )
+
 
 ## tools
 
@@ -51,6 +53,7 @@ def search_game_info(game_title: str) -> str:
     except requests.exceptions.ConnectionError:
         return "Could not reach RAWG API. Check your connection."
 
+
 @tool
 def get_game_deals(game_title: str) -> str:
     """Find current PC game deals and lowest prices across Steam,
@@ -77,6 +80,7 @@ def get_game_deals(game_title: str) -> str:
     except requests.exceptions.ConnectionError:
         return "Could not reach CheapShark API. Try again shortly."
 
+
 def get_igdb_token():
     res = requests.post("https://id.twitch.tv/oauth2/token", params={
         "client_id": os.getenv("IGDB_CLIENT_ID"),
@@ -96,7 +100,35 @@ def get_game_rankings(query: str) -> str:
             "Client-ID": os.getenv("IGDB_CLIENT_ID"),
             "Authorization": f"Bearer {token}"
         }
-        body = f'search "{query}"; fields name,rating,total_rating_count,summary; limit 5;'
+
+        # Map common keywords to IGDB genre/platform IDs
+        genre_map = {
+            "rpg": 12, "shooter": 5, "fighting": 4, "platformer": 8,
+            "strategy": 15, "horror": 19, "adventure": 31, "sports": 14
+        }
+        platform_map = {
+            "ps5": 167, "ps4": 48, "xbox": 169, "pc": 6,
+            "nintendo": 130, "switch": 130
+        }
+
+        query_lower = query.lower()
+        genre_ids = [str(v) for k, v in genre_map.items() if k in query_lower]
+        platform_ids = [str(v) for k, v in platform_map.items() if k in query_lower]
+
+        where_clauses = ["rating > 75", "total_rating_count > 20"]
+        if genre_ids:
+            where_clauses.append(f"genres = ({','.join(genre_ids)})")
+        if platform_ids:
+            where_clauses.append(f"platforms = ({','.join(platform_ids)})")
+
+        where = " & ".join(where_clauses)
+        body = (
+            f'fields name, rating, total_rating_count, genres.name, platforms.name; '
+            f'where {where}; '
+            f'sort rating desc; '
+            f'limit 5;'
+        )
+
         res = requests.post(
             "https://api.igdb.com/v4/games",
             headers=headers,
@@ -105,15 +137,21 @@ def get_game_rankings(query: str) -> str:
         )
         res.raise_for_status()
         games = res.json()
+
         if not games:
-            return f"No results found for '{query}'."
-        output = f"IGDB results for '{query}':\n"
+            return f"No highly rated results found for '{query}'."
+
+        output = f"Top results for '{query}':\n"
         for g in games:
             rating = round(g.get("rating", 0), 1)
-            output += f"- {g['name']} | Rating: {rating}/100\n"
+            genres = ", ".join([x["name"] for x in g.get("genres", [])])
+            output += f"- {g['name']} | Rating: {rating}/100 | Genres: {genres}\n"
         return output
+
     except Exception as e:
         return f"IGDB error: {str(e)}"
+
+
 
 ## ChromaDB setup
 ef = embedding_functions.SentenceTransformerEmbeddingFunction(
@@ -121,6 +159,7 @@ ef = embedding_functions.SentenceTransformerEmbeddingFunction(
 )
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
 collection = chroma_client.get_or_create_collection("vgsales", embedding_function=ef)
+
 
 @tool
 def search_sales_history(query: str) -> str:
@@ -137,6 +176,7 @@ def search_sales_history(query: str) -> str:
     except Exception as e:
         return f"Vector search error: {str(e)}"
 
+
 tools = [search_game_info, get_game_deals, get_game_rankings, search_sales_history]
 
 memory = MemorySaver()
@@ -149,6 +189,7 @@ agent_with_memory = create_agent(
     You help users find games they'll love, check deals, explore sales history, and get rankings.
     Be enthusiastic, knowledgeable, and conversational. Always use your tools to provide accurate data."""
 )
+
 
 if __name__ == "__main__":
     print("=== RAWG ===")
@@ -172,4 +213,3 @@ if __name__ == "__main__":
         config=config
     )
     print(response2["messages"][-1].content)
-
