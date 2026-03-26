@@ -360,7 +360,3 @@ This project is open source and available under the MIT License.
 - **IGDB** for game rankings and metadata
 - **LangChain** for agent framework
 - **OpenAI/Azure** for LLM capabilities
-
----
-
-Built with ❤️ for gamers by gamers
