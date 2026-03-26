@@ -25,12 +25,12 @@ if (!(Test-Path "frontend\node_modules")) {
 }
 
 Write-Host "Starting backend API server..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD\chatbot'; & ..\\.venv\Scripts\Activate.ps1; uvicorn api:app --reload --port 8000"
+Start-Process powershell -ArgumentList "-ExecutionPolicy", "Bypass", "-NoExit", "-Command", "cd '$PWD\chatbot'; & ..\\.venv\Scripts\Activate.ps1; uvicorn api:app --reload --port 8000"
 
 Start-Sleep -Seconds 2
 
 Write-Host "Starting frontend dev server..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD\frontend'; npm run dev"
+Start-Process powershell -ArgumentList "-ExecutionPolicy", "Bypass", "-NoExit", "-Command", "cd '$PWD\frontend'; npm run dev"
 
 Start-Sleep -Seconds 2
 
