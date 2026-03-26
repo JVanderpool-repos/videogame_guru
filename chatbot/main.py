@@ -57,8 +57,9 @@ def search_game_info(game_title: str) -> str:
 @tool
 def get_game_deals(game_title: str) -> str:
     """Find current PC game deals and lowest prices across Steam,
-    Epic Games, and GOG. Use when the user asks about pricing,
-    discounts, sales, or where to buy a game cheaply."""
+    Epic Games, and GOG. IMPORTANT: Only works for PC games, NOT for
+    PlayStation, Xbox, or Nintendo games. Use when the user asks about
+    PC game pricing, discounts, or sales."""
     try:
         res = requests.get(
             "https://www.cheapshark.com/api/1.0/deals",
@@ -106,20 +107,45 @@ def get_game_rankings(query: str) -> str:
             "rpg": 12, "shooter": 5, "fighting": 4, "platformer": 8,
             "strategy": 15, "horror": 19, "adventure": 31, "sports": 14
         }
-        platform_map = {
-            "ps5": 167, "ps4": 48, "xbox": 169, "pc": 6,
-            "nintendo": 130, "switch": 130
-        }
+        # Order matters - check more specific terms first
+        platform_keywords = [
+            ("switch 2", 508),
+            ("switch2", 508),
+            ("xbox series x", 169),
+            ("xbox series s", 169),
+            ("xbox series", 169),
+            ("xbox one", 49),
+            ("xbox 360", 12),
+            ("ps5", 167),
+            ("ps4", 48),
+            ("switch", 130),
+            ("nintendo", 130),
+            ("xbox", 169),  # Default to Series X|S for current gen
+            ("pc", 6),
+        ]
 
         query_lower = query.lower()
         genre_ids = [str(v) for k, v in genre_map.items() if k in query_lower]
-        platform_ids = [str(v) for k, v in platform_map.items() if k in query_lower]
+        
+        # Find platform IDs - check longer/more specific keywords first
+        platform_ids = []
+        for keyword, pid in platform_keywords:
+            if keyword in query_lower:
+                platform_ids.append(str(pid))
+                break  # Use only the most specific match
+        
+        platform_ids = list(set(platform_ids))
 
-        where_clauses = ["rating > 75", "total_rating_count > 20"]
+        where_clauses = ["rating > 60", "total_rating_count > 5"]
         if genre_ids:
-            where_clauses.append(f"genres = ({','.join(genre_ids)})")
+            where_clauses.append(f"genres = [{','.join(genre_ids)}]")
         if platform_ids:
-            where_clauses.append(f"platforms = ({','.join(platform_ids)})")
+            # For single platform, use direct value. For multiple, use OR logic
+            if len(platform_ids) == 1:
+                where_clauses.append(f"platforms = {platform_ids[0]}")
+            else:
+                platform_conditions = " | ".join([f"platforms = {pid}" for pid in platform_ids])
+                where_clauses.append(f"({platform_conditions})")
 
         where = " & ".join(where_clauses)
         body = (
@@ -138,14 +164,65 @@ def get_game_rankings(query: str) -> str:
         res.raise_for_status()
         games = res.json()
 
+        if not games and platform_ids:
+            # Fallback: Try finding ANY highly-rated games available on this platform
+            # (not just exclusives) by using array syntax which allows multi-platform games
+            where_clauses_fallback = ["rating > 80", "total_rating_count > 50"]
+            if genre_ids:
+                where_clauses_fallback.append(f"genres = [{','.join(genre_ids)}]")
+            where_clauses_fallback.append(f"platforms = [{','.join(platform_ids)}]")
+            
+            where_fallback = " & ".join(where_clauses_fallback)
+            body_fallback = (
+                f'fields name, rating, total_rating_count, genres.name, platforms.name; '
+                f'where {where_fallback}; '
+                f'sort rating desc; '
+                f'limit 5;'
+            )
+            
+            res_fallback = requests.post(
+                "https://api.igdb.com/v4/games",
+                headers=headers,
+                data=body_fallback,
+                timeout=10
+            )
+            games = res_fallback.json()
+            
+            if games:
+                output = f"Top-rated games available on this platform (including multi-platform titles):\n"
+                for g in games:
+                    rating = round(g.get("rating", 0), 1)
+                    genres = ", ".join([x["name"] for x in g.get("genres", [])])
+                    platforms = ", ".join([x["name"] for x in g.get("platforms", [])][:4])
+                    if len(g.get("platforms", [])) > 4:
+                        platforms += "..."
+                    output += f"- {g['name']} | Rating: {rating}/100 | Genres: {genres} | Platforms: {platforms}\n"
+                return output
+
         if not games:
-            return f"No highly rated results found for '{query}'."
+            # Still no results even after fallback
+            platform_name = ""
+            if "xbox series" in query_lower:
+                platform_name = "Xbox Series X|S"
+            elif "ps5" in query_lower:
+                platform_name = "PlayStation 5"
+            elif "switch 2" in query_lower:
+                platform_name = "Nintendo Switch 2"
+            
+            if platform_name:
+                return (f"I couldn't find games for {platform_name} in the rankings database. "
+                       f"This platform might be too new or have limited data. "
+                       f"Try asking about a specific game title instead, and I can look up its details!")
+            return f"No highly rated results found for '{query}'. Try being more specific or ask about a particular game title."
 
         output = f"Top results for '{query}':\n"
         for g in games:
             rating = round(g.get("rating", 0), 1)
             genres = ", ".join([x["name"] for x in g.get("genres", [])])
-            output += f"- {g['name']} | Rating: {rating}/100 | Genres: {genres}\n"
+            platforms = ", ".join([x["name"] for x in g.get("platforms", [])][:4])  # Show first 4 platforms
+            if len(g.get("platforms", [])) > 4:
+                platforms += "..."
+            output += f"- {g['name']} | Rating: {rating}/100 | Genres: {genres} | Platforms: {platforms}\n"
         return output
 
     except Exception as e:
@@ -163,16 +240,17 @@ collection = chroma_client.get_or_create_collection("vgsales", embedding_functio
 
 @tool
 def search_sales_history(query: str) -> str:
-    """Search historical video game sales data including global sales,
-    regional sales, critic scores, and user scores. Use when the user
-    asks about best-selling games, sales figures, or wants to compare
-    commercial performance of titles."""
+    """Search historical video game sales data (1980-2020) including global sales,
+    regional sales, critic scores, and user scores for platforms like PS4, Xbox One,
+    PS3, Xbox 360, Wii, original Nintendo Switch, and older. IMPORTANT: This database 
+    does NOT include PS5, Xbox Series X/S, Nintendo Switch 2, or games released after 2020. 
+    For newer platforms/games, you MUST use get_game_rankings or search_game_info instead."""
     try:
         results = collection.query(query_texts=[query], n_results=5)
         docs = results["documents"][0]
         if not docs:
-            return "No sales data found for that query."
-        return "Historical sales data:\n" + "\n".join(f"- {d}" for d in docs)
+            return "No sales data found for that query in the historical database (1980-2020)."
+        return "Historical sales data (1980-2020):\n" + "\n".join(f"- {d}" for d in docs)
     except Exception as e:
         return f"Vector search error: {str(e)}"
 
@@ -187,7 +265,27 @@ agent_with_memory = create_agent(
     checkpointer=memory,
     system_prompt="""You are Videogame Guru, an expert AI assistant for all things video games.
     You help users find games they'll love, check deals, explore sales history, and get rankings.
-    Be enthusiastic, knowledgeable, and conversational. Always use your tools to provide accurate data."""
+    Be enthusiastic, knowledgeable, and conversational.
+    
+    CRITICAL: ALWAYS use your tools to answer questions. Never just ask clarifying questions without trying tools first.
+    
+    Tool usage guidelines:
+    - For "best", "top", "popular" games -> use get_game_rankings immediately
+    - For PC game "deals", "sale", "cheap", "price" -> use get_game_deals (PC ONLY)
+    - For console deals -> explain deals tool is PC-only, then use get_game_rankings for top games
+    - For specific game info -> use search_game_info immediately
+    - For historical sales (pre-2021, PS4/Xbox360/Wii/Switch 1/etc) -> use search_sales_history
+    
+    Your historical sales database: 1980-2020 only (PS4, Xbox One, original Switch, PS3, Wii, etc).
+    Does NOT include: PS5, Xbox Series X/S, Switch 2, or games after 2020.
+    
+    For modern platforms (PS5, Xbox Series X, Switch 2, or 2021+ games): Use get_game_rankings and search_game_info.
+    
+    When users ask vague questions: Make reasonable assumptions and use tools proactively. 
+    Example: "Switch 2 games" -> use get_game_rankings("switch 2 games")
+    Example: "Switch games" -> use get_game_rankings("nintendo switch")
+    
+    Never make up data. If tools return no results, say so clearly and suggest alternatives."""
 )
 
 
