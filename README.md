@@ -341,6 +341,38 @@ All API keys are stored in `chatbot/.env`:
 2. **RAWG API**: Register at [rawg.io/apidocs](https://rawg.io/apidocs) (free, no credit card)
 3. **IGDB API**: Register at [Twitch Developer Console](https://dev.twitch.tv/console/apps) (free)
 
+## ⚠️ Known Limitations
+
+### Data Coverage
+
+**Historical Sales Data (ChromaDB)**
+- **Time Period**: Only covers games from 1980-2020
+- **Missing Platforms**: Does NOT include PlayStation 5, Xbox Series X/S, or Nintendo Switch 2
+- **Missing Games**: Any games released after 2020 are not in the historical sales database
+- **Use Case**: Best for querying older platforms (PS4, Xbox One, original Nintendo Switch, PS3, Wii, etc.)
+
+**Game Rankings (IGDB)**
+- **New Platforms**: Xbox Series X/S and other very new platforms may have limited exclusive game data
+- **Fallback Behavior**: When platform exclusives aren't available, the chatbot automatically searches for highly-rated multi-platform games available on that platform
+- **Rating Threshold**: Requires games to have a minimum rating (60+) and rating count (5+) to appear in results
+
+**Game Deals (CheapShark)**
+- **PC Only**: Only tracks deals for PC games across Steam, Epic Games, and GOG
+- **Console Deals**: Cannot find deals for PlayStation, Xbox, or Nintendo games
+- **Workaround**: For console games, the chatbot will use the rankings tool to suggest top-rated games instead
+
+### API Limitations
+
+- **Rate Limits**: External APIs (RAWG, IGDB, CheapShark) have rate limits; excessive requests may be throttled
+- **API Availability**: Chatbot functionality depends on third-party API uptime
+- **Data Freshness**: Game information and deals are only as current as the external APIs provide
+
+### Session Memory
+
+- **Scope**: Conversation memory is scoped to individual session IDs
+- **Persistence**: Memory is stored in-memory and cleared when the backend restarts
+- **No Cross-Session**: Different sessions cannot access each other's conversation history
+
 ## 🤝 Contributing
 
 Contributions are welcome! Feel free to:
