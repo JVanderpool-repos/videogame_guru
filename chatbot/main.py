@@ -11,15 +11,13 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 
 
-# LLM
+# gpt-4o-mini via GitHub Models
 llm = ChatOpenAI(
     model="gpt-4o-mini",
     api_key=os.getenv("GITHUB_TOKEN"),
     base_url="https://models.inference.ai.azure.com"
 )
 
-
-## tools
 
 @tool
 def search_game_info(game_title: str) -> str:
@@ -35,18 +33,20 @@ def search_game_info(game_title: str) -> str:
         res = requests.get("https://api.rawg.io/api/games", params=params, timeout=10)
         res.raise_for_status()
         results = res.json().get("results", [])
+
         if not results:
             return f"No game found matching '{game_title}'."
+
         g = results[0]
         genres = ", ".join([x["name"] for x in g.get("genres", [])])
         platforms = ", ".join([x["platform"]["name"] for x in g.get("platforms", [])])
-        
+
         result = f"**{g['name']}**\n\n"
-        
-        # Add cover image if available
+
+        # include cover image if available
         if g.get('background_image'):
             result += f"![{g['name']}]({g['background_image']})\n\n"
-        
+
         result += (
             f"**Released:** {g.get('released', 'N/A')}\n"
             f"**Rating:** {g.get('rating', 'N/A')}/5\n"
@@ -68,7 +68,7 @@ def browse_current_deals() -> str:
     "what's on sale", or "best deals" WITHOUT specifying a particular game. 
     Shows top discounted games sorted by savings percentage. PC only."""
     try:
-        # Get current deals sorted by savings percentage
+        # sorted by highest savings
         res = requests.get(
             "https://www.cheapshark.com/api/1.0/deals",
             params={
@@ -80,19 +80,18 @@ def browse_current_deals() -> str:
         )
         res.raise_for_status()
         deals = res.json()
-        
+
         if not deals:
             return "No active PC game deals found right now. Try checking back later!"
-        
-        # Store name mapping
+
         store_map = {
-            "1": "Steam", "7": "GOG", "8": "Origin", "11": "Humble", 
+            "1": "Steam", "7": "GOG", "8": "Origin", "11": "Humble",
             "13": "Uplay", "15": "Fanatical", "23": "GameBillet",
             "25": "Epic", "27": "Gamesplanet"
         }
-        
+
         output = "🔥 **Top PC Game Deals Right Now:**\n\n"
-        
+
         for deal in deals[:10]:
             title = deal.get("title", "Unknown")
             sale_price = float(deal.get("salePrice", 0))
@@ -100,12 +99,12 @@ def browse_current_deals() -> str:
             savings = float(deal.get("savings", 0))
             store_id = deal.get("storeID", "")
             store_name = store_map.get(store_id, "Store")
-            
+
             output += f"**{title}**\n"
             output += f"${sale_price:.2f} ~~${normal_price:.2f}~~ ({savings:.0f}% off) - {store_name}\n\n"
-        
+
         return output
-        
+
     except requests.exceptions.ConnectionError:
         return "Could not reach CheapShark API. Try again shortly."
     except Exception as e:
@@ -119,7 +118,7 @@ def get_game_deals(game_title: str) -> str:
     active discounts. Use when the user asks about a specific game's price or deals.
     IMPORTANT: Only works for PC games, NOT for PlayStation, Xbox, or Nintendo games."""
     try:
-        # First, search for the game to get its ID
+        # search by title to get the gameID first
         search_res = requests.get(
             "https://www.cheapshark.com/api/1.0/games",
             params={"title": game_title, "limit": 1},
@@ -127,26 +126,25 @@ def get_game_deals(game_title: str) -> str:
         )
         search_res.raise_for_status()
         games = search_res.json()
-        
+
         if not games:
             return f"No PC game found matching '{game_title}' in the price database."
-        
+
         game = games[0]
         game_id = game["gameID"]
         game_name = game["external"]
-        
-        # Get detailed pricing info for all stores
+
+        # fetch full pricing across all stores
         details_res = requests.get(
             f"https://www.cheapshark.com/api/1.0/games?id={game_id}",
             timeout=10
         )
         details_res.raise_for_status()
         game_details = details_res.json()
-        
-        # Store name mapping (complete list from CheapShark API)
+
         store_names = {
             "1": "Steam",
-            "2": "GamersGate", 
+            "2": "GamersGate",
             "3": "GreenManGaming",
             "4": "Amazon",
             "7": "GOG",
@@ -162,54 +160,52 @@ def get_game_deals(game_title: str) -> str:
             "30": "IndieGala",
             "33": "DLGamer"
         }
-        
-        # Priority order for displaying stores (show these first if available)
-        priority_stores = ["1", "25", "7", "11", "15"]  # Steam, Epic, GOG, Humble, Fanatical
-        
+
+        # show major stores first
+        priority_stores = ["1", "25", "7", "11", "15"]
+
         deals = game_details.get("deals", [])
         if not deals:
             return f"No pricing information available for '{game_name}'."
-        
-        # Separate priority stores from others
+
         priority_deals = []
         other_deals = []
-        
+
         for deal in deals:
             store_id = deal.get("storeID")
             if store_id in priority_stores and store_id in store_names:
                 priority_deals.append((store_id, deal))
             elif store_id in store_names:
                 other_deals.append((store_id, deal))
-        
-        # Combine: priority stores first, then others (limit to 8 total)
-        all_deals = priority_deals + other_deals
-        all_deals = all_deals[:8]
-        
+
+        # cap at 8 results total
+        all_deals = (priority_deals + other_deals)[:8]
+
         if not all_deals:
             return f"No major store prices available for '{game_name}'."
-        
-        # Format output
+
         output = f"**{game_name}** - Current PC Prices:\n\n"
-        
+
         for store_id, deal in all_deals:
             store_name = store_names[store_id]
             retail_price = float(deal.get("retailPrice", 0))
             sale_price = float(deal.get("price", 0))
             savings = float(deal.get("savings", 0))
-            
+
             if savings > 0:
                 output += f"🔥 **{store_name}**: ${sale_price:.2f} ~~${retail_price:.2f}~~ ({savings:.0f}% off)\n"
             else:
                 output += f"**{store_name}**: ${sale_price:.2f}\n"
-            
+
         return output
-        
+
     except requests.exceptions.ConnectionError:
         return "Could not reach CheapShark API. Try again shortly."
     except Exception as e:
         return f"Error fetching prices: {str(e)}"
 
 
+# IGDB uses Twitch OAuth, fetch a fresh token each time
 def get_igdb_token():
     res = requests.post("https://id.twitch.tv/oauth2/token", params={
         "client_id": os.getenv("IGDB_CLIENT_ID"),
@@ -217,6 +213,7 @@ def get_igdb_token():
         "grant_type": "client_credentials"
     })
     return res.json()["access_token"]
+
 
 @tool
 def get_game_rankings(query: str) -> str:
@@ -236,12 +233,12 @@ def get_game_rankings(query: str) -> str:
             "Authorization": f"Bearer {token}"
         }
 
-        # Map common keywords to IGDB genre/platform IDs
         genre_map = {
             "rpg": 12, "shooter": 5, "fighting": 4, "platformer": 8,
             "strategy": 15, "horror": 19, "adventure": 31, "sports": 14
         }
-        # Order matters - check more specific terms first
+
+        # more specific terms checked first to avoid wrong matches
         platform_keywords = [
             ("switch 2", 508),
             ("switch2", 508),
@@ -254,27 +251,26 @@ def get_game_rankings(query: str) -> str:
             ("ps4", 48),
             ("switch", 130),
             ("nintendo", 130),
-            ("xbox", 169),  # Default to Series X|S for current gen
+            ("xbox", 169),
             ("pc", 6),
         ]
 
         query_lower = query.lower()
         genre_ids = [str(v) for k, v in genre_map.items() if k in query_lower]
-        
-        # Find platform IDs - check longer/more specific keywords first
+
+        # only grab the first match so we don't double up
         platform_ids = []
         for keyword, pid in platform_keywords:
             if keyword in query_lower:
                 platform_ids.append(str(pid))
-                break  # Use only the most specific match
-        
+                break
+
         platform_ids = list(set(platform_ids))
 
         where_clauses = ["rating > 60", "total_rating_count > 5"]
         if genre_ids:
             where_clauses.append(f"genres = [{','.join(genre_ids)}]")
         if platform_ids:
-            # For single platform, use direct value. For multiple, use OR logic
             if len(platform_ids) == 1:
                 where_clauses.append(f"platforms = {platform_ids[0]}")
             else:
@@ -298,14 +294,13 @@ def get_game_rankings(query: str) -> str:
         res.raise_for_status()
         games = res.json()
 
+        # fallback: broaden search to include multi-platform titles
         if not games and platform_ids:
-            # Fallback: Try finding ANY highly-rated games available on this platform
-            # (not just exclusives) by using array syntax which allows multi-platform games
             where_clauses_fallback = ["rating > 80", "total_rating_count > 50"]
             if genre_ids:
                 where_clauses_fallback.append(f"genres = [{','.join(genre_ids)}]")
             where_clauses_fallback.append(f"platforms = [{','.join(platform_ids)}]")
-            
+
             where_fallback = " & ".join(where_clauses_fallback)
             body_fallback = (
                 f'fields name, rating, total_rating_count, genres.name, platforms.name, cover.url; '
@@ -313,7 +308,7 @@ def get_game_rankings(query: str) -> str:
                 f'sort rating desc; '
                 f'limit 5;'
             )
-            
+
             res_fallback = requests.post(
                 "https://api.igdb.com/v4/games",
                 headers=headers,
@@ -321,7 +316,7 @@ def get_game_rankings(query: str) -> str:
                 timeout=10
             )
             games = res_fallback.json()
-            
+
             if games:
                 output = f"Top-rated games available on this platform (including multi-platform titles):\n\n"
                 for g in games:
@@ -330,18 +325,17 @@ def get_game_rankings(query: str) -> str:
                     platforms = ", ".join([x["name"] for x in g.get("platforms", [])][:4])
                     if len(g.get("platforms", [])) > 4:
                         platforms += "..."
-                    
-                    # Add cover image if available
+
+                    # upgrade from thumbnail to large cover
                     cover = g.get('cover', {})
                     if cover and cover.get('url'):
                         cover_url = "https:" + cover['url'].replace('t_thumb', 't_cover_big')
                         output += f"![{g['name']}]({cover_url})\n\n"
-                    
+
                     output += f"**{g['name']}** | Rating: {rating}/100 | Genres: {genres} | Platforms: {platforms}\n\n"
                 return output
 
         if not games:
-            # Still no results even after fallback
             platform_name = ""
             if "xbox series" in query_lower:
                 platform_name = "Xbox Series X|S"
@@ -349,27 +343,27 @@ def get_game_rankings(query: str) -> str:
                 platform_name = "PlayStation 5"
             elif "switch 2" in query_lower:
                 platform_name = "Nintendo Switch 2"
-            
+
             if platform_name:
                 return (f"I couldn't find games for {platform_name} in the rankings database. "
-                       f"This platform might be too new or have limited data. "
-                       f"Try asking about a specific game title instead, and I can look up its details!")
+                        f"This platform might be too new or have limited data. "
+                        f"Try asking about a specific game title instead, and I can look up its details!")
             return f"No highly rated results found for '{query}'. Try being more specific or ask about a particular game title."
 
         output = f"Top results for '{query}':\n\n"
         for g in games:
             rating = round(g.get("rating", 0), 1)
             genres = ", ".join([x["name"] for x in g.get("genres", [])])
-            platforms = ", ".join([x["name"] for x in g.get("platforms", [])][:4])  # Show first 4 platforms
+            platforms = ", ".join([x["name"] for x in g.get("platforms", [])][:4])
             if len(g.get("platforms", [])) > 4:
                 platforms += "..."
-            
-            # Add cover image if available
+
+            # upgrade from thumbnail to large cover
             cover = g.get('cover', {})
             if cover and cover.get('url'):
                 cover_url = "https:" + cover['url'].replace('t_thumb', 't_cover_big')
                 output += f"![{g['name']}]({cover_url})\n\n"
-            
+
             output += f"**{g['name']}** | Rating: {rating}/100 | Genres: {genres} | Platforms: {platforms}\n\n"
         return output
 
@@ -377,8 +371,7 @@ def get_game_rankings(query: str) -> str:
         return f"IGDB error: {str(e)}"
 
 
-
-## ChromaDB setup
+# persistent chroma vector store for historical sales data
 ef = embedding_functions.SentenceTransformerEmbeddingFunction(
     model_name="all-MiniLM-L6-v2"
 )
