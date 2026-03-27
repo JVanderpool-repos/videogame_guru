@@ -375,7 +375,7 @@ All API keys are stored in `chatbot/.env`:
 
 ## 🤖 Development Methodology
 
-This project was built using AI pair programming with Perplexity AI as a development assistant. AI assistance was used for:
+This project was built using AI pair programming with Claude Sonnet as a development assistant. AI assistance was used for:
 
 - Code generation and implementation
 
