@@ -9,8 +9,10 @@ function App() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
+  // unique session id per browser tab so memory stays separate
   const sessionId = useRef('session_' + Date.now())
 
+  // scroll to bottom whenever messages update
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
@@ -36,6 +38,7 @@ function App() {
     }
   }
 
+  // send on Enter, allow Shift+Enter for new lines
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -53,6 +56,7 @@ function App() {
         {messages.map((msg, i) => (
           <div key={i} className={`message ${msg.role}`}>
             <div className="bubble">
+              {/* render markdown so agent responses display correctly */}
               <ReactMarkdown>{msg.content}</ReactMarkdown>
             </div>
           </div>
@@ -62,6 +66,7 @@ function App() {
             <div className="bubble typing">Thinking...</div>
           </div>
         )}
+        {/* invisible div at the bottom to anchor auto-scroll */}
         <div ref={bottomRef} />
       </div>
       <div className="input-row">
