@@ -373,6 +373,20 @@ All API keys are stored in `chatbot/.env`:
 - **Persistence**: Memory is stored in-memory and cleared when the backend restarts
 - **No Cross-Session**: Different sessions cannot access each other's conversation history
 
+## 🤖 Development Methodology
+
+This project was built using AI pair programming with Perplexity AI as a development assistant. AI assistance was used for:
+
+- Code generation and implementation
+
+- Debugging and error resolution
+
+- Code review and architectural guidance
+
+- Troubleshooting API integrations
+
+All code was reviewed, tested, and understood by the developer.
+
 ## 🤝 Contributing
 
 Contributions are welcome! Feel free to:
