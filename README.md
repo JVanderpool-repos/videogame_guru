@@ -6,12 +6,13 @@ An AI-powered video game assistant chatbot that helps you discover games, find d
 
 ## ✨ Features
 
-- **Game Information**: Get detailed info about any game including ratings, genres, platforms, and release dates (powered by RAWG API)
-- **Deal Finder**: Find the best PC game deals across Steam, Epic Games, and GOG (powered by CheapShark API)
-- **Game Rankings**: Discover top-rated games by genre, platform, or franchise (powered by IGDB API)
-- **Sales History**: Search historical video game sales data with semantic search (powered by ChromaDB vector database)
+- **Game Information**: Get detailed info about any game including ratings, genres, platforms, and release dates with cover images (powered by RAWG API)
+- **PC Deal Browser**: Browse the hottest PC game deals and sales happening right now, sorted by discount percentage - perfect for finding free games and deep discounts (powered by CheapShark API)
+- **Price Checker**: Check current prices for specific games across Steam, Epic Games, GOG, Humble, and more stores (powered by CheapShark API)
+- **Game Rankings**: Discover top-rated games by genre, platform, or franchise with cover art from IGDB (powered by IGDB API)
+- **Sales History**: Search historical video game sales data (1980-2020) with semantic search (powered by ChromaDB vector database)
 - **Conversational Memory**: The agent remembers context within each chat session
-- **Modern UI**: Clean, responsive React frontend with markdown support
+- **Modern UI**: Clean, responsive React frontend with markdown support and image display
 
 ## 🛠️ Tech Stack
 
@@ -231,36 +232,58 @@ Health check endpoint.
 
 ## 🤖 Agent Tools
 
-The LangChain agent has access to four specialized tools:
+The LangChain agent has access to five specialized tools:
 
 ### 1. `search_game_info`
-- Searches for game details including rating, genres, platforms, and release date
+- Searches for game details including rating, genres, platforms, release date, and cover images
 - Source: RAWG API
 - Use case: "Tell me about Elden Ring"
 
-### 2. `get_game_deals`
-- Finds current PC game deals and prices across multiple stores
+### 2. `browse_current_deals`
+- Browses the best PC game deals happening right now across all stores, sorted by savings
+- Shows free games and biggest discounts
 - Source: CheapShark API
-- Use case: "Is Elden Ring on sale?"
+- Use case: "What are the top PC deals?" or "Show me current sales"
 
-### 3. `get_game_rankings`
-- Gets top-rated games by genre, platform, or franchise
+### 3. `get_game_deals`
+- Gets current prices for a specific PC game across Steam, Epic, GOG, Humble, and other stores
+- Shows both regular prices and active discounts
+- Source: CheapShark API
+- Use case: "What's the price of Cyberpunk 2077?" or "Is Elden Ring on sale?"
+
+### 4. `get_game_rankings`
+- Gets top-rated games by genre, platform, or franchise with cover art
+- Supports modern platforms (PS5, Xbox Series X/S, Switch 2)
 - Source: IGDB API
-- Use case: "What are the best RPGs?" or "Top Nintendo games"
+- Use case: "What are the best PS5 games?" or "Top rated RPGs"
 
-### 4. `search_sales_history`
-- Semantic search over historical sales data
+### 5. `search_sales_history`
+- Semantic search over historical sales data (1980-2020)
+- Includes PS4, Xbox One, PS3, Xbox 360, Wii, and older platforms
 - Source: ChromaDB vector database
-- Use case: "Best selling Nintendo games" or "Games with high critic scores"
+- Use case: "Best selling Wii games" or "Games from 2010 with high critic scores"
 
 ## 💡 Example Queries
 
-- "What is Elden Ring and is it on sale anywhere?"
-- "Tell me about the best RPGs for PS5"
-- "What are the top rated horror games?"
-- "Find me deals on strategy games"
+**Game Information:**
+- "What is Elden Ring?"
+- "Tell me about Baldur's Gate 3"
+
+**Deals & Pricing:**
+- "What are the top PC game deals right now?"
+- "Show me current sales"
+- "What's the price of Cyberpunk 2077?"
+- "Is Elden Ring on sale anywhere?"
+
+**Rankings & Recommendations:**
+- "What are the best PS5 games?"
+- "Top rated horror games"
+- "Best RPGs for Nintendo Switch"
+
+**Sales History (1980-2020):**
 - "What were the best selling games in 2010?"
 - "Compare sales of Mario and Sonic games"
+- "Most popular Wii games"
 
 ## 🧪 Testing
 
@@ -356,8 +379,8 @@ All API keys are stored in `chatbot/.env`:
 - **Fallback Behavior**: When platform exclusives aren't available, the chatbot automatically searches for highly-rated multi-platform games available on that platform
 - **Rating Threshold**: Requires games to have a minimum rating (60+) and rating count (5+) to appear in results
 
-**Game Deals (CheapShark)**
-- **PC Only**: Only tracks deals for PC games across Steam, Epic Games, and GOG
+**Game Deals & Pricing (CheapShark)**
+- **PC Only**: Only tracks deals and prices for PC games across Steam, Epic Games, GOG, and other PC stores
 - **Console Deals**: Cannot find deals for PlayStation, Xbox, or Nintendo games
 - **Workaround**: For console games, the chatbot will use the rankings tool to suggest top-rated games instead
 
@@ -378,11 +401,8 @@ All API keys are stored in `chatbot/.env`:
 This project was built using AI pair programming with Claude Sonnet as a development assistant. AI assistance was used for:
 
 - Code generation and implementation
-
 - Debugging and error resolution
-
 - Code review and architectural guidance
-
 - Troubleshooting API integrations
 
 All code was reviewed, tested, and understood by the developer.
