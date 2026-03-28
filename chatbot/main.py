@@ -66,14 +66,14 @@ def browse_current_deals() -> str:
     """Browse the best current PC game deals and sales happening right now 
     across all stores. Use when the user asks for "current deals", "sales", 
     "what's on sale", or "best deals" WITHOUT specifying a particular game. 
-    Shows top discounted games sorted by savings percentage. PC only."""
+    Shows top discounted PAID games (excludes free games). PC only."""
     try:
-        # sorted by highest savings
+        # sorted by highest savings, get more results to filter
         res = requests.get(
             "https://www.cheapshark.com/api/1.0/deals",
             params={
                 "sortBy": "Savings",
-                "pageSize": 10,
+                "pageSize": 50,
                 "onSale": 1
             },
             timeout=10
@@ -85,14 +85,35 @@ def browse_current_deals() -> str:
             return "No active PC game deals found right now. Try checking back later!"
 
         store_map = {
-            "1": "Steam", "7": "GOG", "8": "Origin", "11": "Humble",
-            "13": "Uplay", "15": "Fanatical", "23": "GameBillet",
-            "25": "Epic", "27": "Gamesplanet"
+            "1": "Steam", "2": "GamersGate", "3": "GreenManGaming",
+            "7": "GOG", "8": "Origin", "11": "Humble", "13": "Ubisoft",
+            "15": "Fanatical", "21": "WinGameStore", "23": "GameBillet",
+            "24": "Voidu", "25": "Epic", "27": "Gamesplanet",
+            "28": "Games Republic", "29": "SilaGames", "30": "GamesPlanet FR",
+            "31": "GamesPlanet DE", "33": "DLGamer", "34": "Noctre",
+            "35": "DreamGame"
         }
+
+        # filter out free games and games with original price < $5
+        filtered_deals = []
+        for deal in deals:
+            sale_price = float(deal.get("salePrice", 0))
+            normal_price = float(deal.get("normalPrice", 0))
+            
+            # skip free games and low-value games
+            if sale_price > 0 and normal_price >= 5.0:
+                filtered_deals.append(deal)
+            
+            # stop once we have 10 good deals
+            if len(filtered_deals) >= 10:
+                break
+
+        if not filtered_deals:
+            return "No significant PC game deals found right now. Try checking back later!"
 
         output = "🔥 **Top PC Game Deals Right Now:**\n\n"
 
-        for deal in deals[:10]:
+        for deal in filtered_deals:
             title = deal.get("title", "Unknown")
             sale_price = float(deal.get("salePrice", 0))
             normal_price = float(deal.get("normalPrice", 0))
@@ -217,15 +238,22 @@ def get_igdb_token():
 
 @tool
 def get_game_rankings(query: str) -> str:
-    """Get top-rated or most popular games by genre, platform, or franchise.
+    """Get CURRENT top-rated or most popular games by genre, platform, or franchise.
+    
+    USE THIS TOOL when users ask for: "best games", "top games", "most popular", "top-selling",
+    "what should I play", "best Steam games", "top PS5 games", etc.
+    
+    This provides CURRENT, up-to-date game rankings from IGDB. Works for all platforms including
+    PS5, Xbox Series X/S, Switch 2, PC/Steam, and older platforms.
     
     IMPORTANT: When calling this tool, preserve the platform name from the user's question in the query.
     Examples:
     - User asks "best PS5 games" -> call get_game_rankings("ps5 games") or get_game_rankings("best ps5 games")
     - User asks "top Xbox games" -> call get_game_rankings("top xbox games")
     - User asks "best RPGs" -> call get_game_rankings("best RPGs")
+    - User asks "top-selling Steam games" -> call get_game_rankings("top steam games")
     
-    The query parameter should include platform names (PS5, Xbox, Switch, etc.) when the user mentions them."""
+    The query parameter should include platform names (PS5, Xbox, Switch, PC, Steam, etc.) when the user mentions them."""
     try:
         token = get_igdb_token()
         headers = {
@@ -381,11 +409,22 @@ collection = chroma_client.get_or_create_collection("vgsales", embedding_functio
 
 @tool
 def search_sales_history(query: str) -> str:
-    """Search historical video game sales data (1980-2020) including global sales,
-    regional sales, critic scores, and user scores for platforms like PS4, Xbox One,
-    PS3, Xbox 360, Wii, original Nintendo Switch, and older. IMPORTANT: This database 
-    does NOT include PS5, Xbox Series X/S, Nintendo Switch 2, or games released after 2020. 
-    For newer platforms/games, you MUST use get_game_rankings or search_game_info instead."""
+    """Search historical video game sales data (1980-2020) for SALES ANALYSIS ONLY.
+    
+    USE THIS TOOL ONLY when users ask about:
+    - Historical sales figures ("how many copies did X sell?", "best-selling Wii games")
+    - Sales comparisons ("which sold more, X or Y?")
+    - Regional sales breakdown (NA/EU/JP sales)
+    - Historical sales trends and analysis
+    
+    DO NOT USE for "what are the best/top games" questions - use get_game_rankings instead.
+    
+    Database includes: Global sales, regional sales (NA/EU/JP), critic scores, user scores.
+    Platforms: PS4, Xbox One, PS3, Xbox 360, Wii, original Nintendo Switch, and older.
+    Coverage: 1980-2020 only.
+    
+    Does NOT include: PS5, Xbox Series X/S, Nintendo Switch 2, or games released after 2020.
+    For newer platforms/games, use get_game_rankings or search_game_info instead."""
     try:
         results = collection.query(query_texts=[query], n_results=5)
         docs = results["documents"][0]
