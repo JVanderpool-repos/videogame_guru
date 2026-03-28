@@ -262,8 +262,23 @@ def get_game_rankings(query: str) -> str:
         }
 
         genre_map = {
-            "rpg": 12, "shooter": 5, "fighting": 4, "platformer": 8,
-            "strategy": 15, "horror": 19, "adventure": 31, "sports": 14
+            "rpg": 12, "role-playing": 12, "roleplaying": 12,
+            "shooter": 5, "fps": 5, "shooting": 5,
+            "fighting": 4, "fighter": 4,
+            "platformer": 8, "platform": 8,
+            "strategy": 15, "rts": 11, "turn-based": 16, "tactical": 24,
+            "horror": 19, "scary": 19,
+            "adventure": 31,
+            "sports": 14, "sport": 14,
+            "racing": 10, "race": 10, "driving": 10,
+            "puzzle": 9, "puzzler": 9,
+            "simulation": 13, "simulator": 13, "sim": 13,
+            "arcade": 33,
+            "visual novel": 34,
+            "card": 35, "board": 35,
+            "moba": 36,
+            "hack and slash": 25, "beat em up": 25,
+            "music": 7, "rhythm": 7
         }
 
         # more specific terms checked first to avoid wrong matches
@@ -285,6 +300,13 @@ def get_game_rankings(query: str) -> str:
 
         query_lower = query.lower()
         genre_ids = [str(v) for k, v in genre_map.items() if k in query_lower]
+        
+        # handle "action" as a broad category (not a specific IGDB genre)
+        # action games include: shooter, fighting, platform, hack and slash
+        is_action_query = False
+        if "action" in query_lower and not genre_ids:
+            genre_ids = ["5", "4", "8", "25"]  # shooter, fighting, platform, hack and slash
+            is_action_query = True
 
         # only grab the first match so we don't double up
         platform_ids = []
@@ -295,15 +317,25 @@ def get_game_rankings(query: str) -> str:
 
         platform_ids = list(set(platform_ids))
 
-        where_clauses = ["rating > 60", "total_rating_count > 5"]
-        if genre_ids:
-            where_clauses.append(f"genres = [{','.join(genre_ids)}]")
-        if platform_ids:
-            if len(platform_ids) == 1:
-                where_clauses.append(f"platforms = {platform_ids[0]}")
-            else:
-                platform_conditions = " | ".join([f"platforms = {pid}" for pid in platform_ids])
-                where_clauses.append(f"({platform_conditions})")
+        # for action queries, relax the filters and use broader genre matching
+        if is_action_query:
+            where_clauses = ["rating > 60"]
+            # use platforms filter
+            if platform_ids:
+                where_clauses.append(f"platforms = [{','.join(platform_ids)}]")
+            # use any of the action genres
+            genre_conditions = " | ".join([f"genres = {gid}" for gid in genre_ids])
+            where_clauses.append(f"({genre_conditions})")
+        else:
+            where_clauses = ["rating > 60", "total_rating_count > 5"]
+            if genre_ids:
+                where_clauses.append(f"genres = [{','.join(genre_ids)}]")
+            if platform_ids:
+                if len(platform_ids) == 1:
+                    where_clauses.append(f"platforms = {platform_ids[0]}")
+                else:
+                    platform_conditions = " | ".join([f"platforms = {pid}" for pid in platform_ids])
+                    where_clauses.append(f"({platform_conditions})")
 
         where = " & ".join(where_clauses)
         body = (
