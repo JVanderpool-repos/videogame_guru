@@ -64,8 +64,11 @@ def search_game_info(game_title: str) -> str:
             f"**Rating:** {g.get('rating', 'N/A')}/5\n"
             f"**Genres:** {genres}\n"
             f"**Platforms:** {platforms}\n"
-            f"**Metacritic:** {g.get('metacritic', 'N/A')}"
+            f"**Metacritic:** {g.get('metacritic', 'N/A')}\n\n"
         )
+        
+        # Add contextual closing
+        result += f"Want to check current PC deals for {g['name']} or explore similar {genres.split(',')[0] if genres else 'games'}?"
         return result
     
     except requests.exceptions.HTTPError as e:
@@ -154,6 +157,7 @@ def browse_current_deals() -> str:
             output += f"**{title}**\n"
             output += f"${sale_price:.2f} ~~${normal_price:.2f}~~ ({savings:.0f}% off) - {store_name}\n\n"
 
+        output += "These are the hottest PC deals available right now! Want details on a specific game or explore top-rated titles?"
         return output
 
     except requests.exceptions.HTTPError as e:
@@ -261,6 +265,7 @@ def get_game_deals(game_title: str) -> str:
             else:
                 output += f"**{store_name}**: ${sale_price:.2f}\n"
 
+        output += f"\nWant more details about {game_name} or explore similar games?"
         return output
 
     except requests.exceptions.HTTPError as e:
@@ -529,6 +534,29 @@ def get_game_rankings(query: str) -> str:
                 output += f"![{g['name']}]({cover_url})\n\n"
 
             output += f"**{g['name']}** | Rating: {rating}/100 | Genres: {genres} | Platforms: {platforms}\n\n"
+        
+        # Add contextual closing based on query
+        query_lower = query.lower()
+        if "ps5" in query_lower:
+            closing = "These are the top-rated PS5 titles available now. Want details on a specific game or current PC deals?"
+        elif "xbox series" in query_lower:
+            closing = "These are the best Xbox Series X|S games out there. Need more info on any of these?"
+        elif "switch 2" in query_lower:
+            closing = "These are the hottest Switch 2 releases. Want to dive deeper into any of these titles?"
+        elif "switch" in query_lower:
+            closing = "These Nintendo Switch games are must-plays. Interested in learning more about any of them?"
+        elif "pc" in query_lower or "steam" in query_lower:
+            closing = "These PC games are highly recommended. Want to check current deals or get more details?"
+        elif "rpg" in query_lower:
+            closing = "These RPGs offer incredible adventures. Want more info or check if any are on sale?"
+        elif "shooter" in query_lower or "fps" in query_lower:
+            closing = "These shooters are top-tier. Looking for deals or want to know more about any of them?"
+        elif "indie" in query_lower:
+            closing = "These indie gems are worth your time. Want details or current PC pricing?"
+        else:
+            closing = "These games are highly rated and worth checking out. Want more details or current deals?"
+        
+        output += closing
         return output
 
     except ValueError as e:
@@ -595,7 +623,156 @@ def search_sales_history(query: str) -> str:
         if not docs:
             return "No sales data found for that query in the historical database (1980-2020)."
         
-        return "Historical sales data (1980-2020):\n" + "\n".join(f"- {d}" for d in docs)
+        # Parse and format the sales data intelligently
+        game_data = []
+        for doc in docs:
+            try:
+                # Parse the structured text from ChromaDB
+                parts = doc.split(". ")
+                
+                # Extract game name and platform from first sentence
+                first_part = parts[0] if parts else doc
+                name_platform = first_part.split(" was released on ")
+                game_name = name_platform[0].strip() if len(name_platform) > 1 else "Unknown"
+                
+                # Extract platform and year
+                platform_year = name_platform[1].split(" in ") if len(name_platform) > 1 else ["Unknown", "N/A"]
+                platform = platform_year[0].strip() if platform_year else "Unknown"
+                year = platform_year[1].strip() if len(platform_year) > 1 else "N/A"
+                
+                # Initialize data fields
+                genre = publisher = global_sales = "Unknown"
+                na_sales = eu_sales = jp_sales = "N/A"
+                critic_score = user_score = rating = "N/A"
+                
+                # Parse remaining fields
+                for part in parts[1:]:
+                    if "Genre:" in part:
+                        genre = part.split("Genre:")[1].strip()
+                    elif "Publisher:" in part:
+                        publisher = part.split("Publisher:")[1].strip()
+                    elif "Global sales:" in part:
+                        global_sales = part.split("Global sales:")[1].replace("million copies", "").strip()
+                    elif "NA sales:" in part:
+                        sales_parts = part.split(", ")
+                        for sp in sales_parts:
+                            if "NA sales:" in sp:
+                                na_sales = sp.split("NA sales:")[1].replace("M", "").strip()
+                            elif "EU sales:" in sp:
+                                eu_sales = sp.split("EU sales:")[1].replace("M", "").strip()
+                            elif "JP sales:" in sp:
+                                jp_sales = sp.split("JP sales:")[1].replace("M", "").strip()
+                    elif "Critic score:" in part:
+                        scores = part.split(", ")
+                        for sc in scores:
+                            if "Critic score:" in sc:
+                                critic_score = sc.split("Critic score:")[1].strip()
+                            elif "User score:" in sc:
+                                user_score = sc.split("User score:")[1].strip()
+                    elif "Rating:" in part:
+                        rating = part.split("Rating:")[1].strip()
+                
+                # Convert global sales to float for filtering/sorting
+                try:
+                    sales_value = float(global_sales.replace("M", "").strip())
+                except:
+                    sales_value = 0.0
+                
+                game_data.append({
+                    'name': game_name,
+                    'platform': platform,
+                    'year': year,
+                    'genre': genre,
+                    'publisher': publisher,
+                    'global_sales': global_sales,
+                    'sales_value': sales_value,
+                    'na_sales': na_sales,
+                    'eu_sales': eu_sales,
+                    'jp_sales': jp_sales,
+                    'critic_score': critic_score,
+                    'user_score': user_score,
+                    'rating': rating
+                })
+                
+            except Exception:
+                # Skip entries that fail to parse
+                continue
+        
+        # Filter out low-sales entries (< 0.5M copies) if we have enough results
+        if len(game_data) > 3:
+            game_data = [g for g in game_data if g['sales_value'] >= 0.5]
+        
+        # Limit to top 5 results
+        game_data = game_data[:5]
+        
+        if not game_data:
+            return "No significant sales data found for that query in the historical database (1980-2020)."
+        
+        # Create contextual header based on query
+        query_lower = query.lower()
+        if any(term in query_lower for term in ["wii", "nintendo wii"]):
+            header = "Best-Selling Wii Games"
+        elif any(term in query_lower for term in ["ps4", "playstation 4"]):
+            header = "Best-Selling PS4 Games"
+        elif any(term in query_lower for term in ["xbox one"]):
+            header = "Best-Selling Xbox One Games"
+        elif any(term in query_lower for term in ["ps3", "playstation 3"]):
+            header = "Best-Selling PS3 Games"
+        elif any(term in query_lower for term in ["xbox 360"]):
+            header = "Best-Selling Xbox 360 Games"
+        elif any(term in query_lower for term in ["switch", "nintendo switch"]):
+            header = "Best-Selling Switch Games"
+        elif any(term in query_lower for term in ["nintendo", "nes", "snes", "n64", "gamecube"]):
+            header = "Best-Selling Nintendo Games"
+        elif any(term in query_lower for term in ["playstation", "sony", "psx", "ps2", "ps5"]):
+            header = "Best-Selling PlayStation Games"
+        elif any(term in query_lower for term in ["xbox", "microsoft"]):
+            header = "Best-Selling Xbox Games"
+        else:
+            header = "Historical Video Game Sales"
+        
+        # Build clean, scannable output with contextual header
+        output = f"**{header} (Historical Sales Data 1980–2020)**\n\n"
+        
+        for i, game in enumerate(game_data, 1):
+            output += f"**{i}. {game['name']}**  \n"
+            output += f"**Global Sales:** {game['global_sales']} million copies  \n"
+            output += f"**Publisher:** {game['publisher']} • **Year:** {game['year']} • **Genre:** {game['genre']}  \n"
+            
+            # Show scores if available and meaningful
+            if game['critic_score'] not in ["Unknown", "N/A"] and game['user_score'] not in ["Unknown", "N/A"]:
+                output += f"**Scores:** Critic {game['critic_score']} | User {game['user_score']}\n"
+            elif game['critic_score'] not in ["Unknown", "N/A"]:
+                output += f"**Scores:** Critic {game['critic_score']}\n"
+            elif game['user_score'] not in ["Unknown", "N/A"]:
+                output += f"**Scores:** User {game['user_score']}\n"
+            else:
+                output += "\n"
+            
+            # Add separator between entries (except after last one)
+            if i < len(game_data):
+                output += "\n"
+        
+        # Add contextual closing message based on query
+        query_lower = query.lower()
+        if "wii" in query_lower:
+            closing_context = "These titles dominated the Wii era and helped define its massive popularity."
+        elif "ps4" in query_lower or "playstation 4" in query_lower:
+            closing_context = "These games were massive hits during the PS4 generation."
+        elif "xbox one" in query_lower:
+            closing_context = "These titles were among the best-sellers on Xbox One."
+        elif "ps3" in query_lower or "playstation 3" in query_lower:
+            closing_context = "These games defined the PS3 era."
+        elif "xbox 360" in query_lower:
+            closing_context = "These titles were huge on the Xbox 360."
+        elif "switch" in query_lower:
+            closing_context = "These games helped establish the Switch as a hit platform."
+        else:
+            closing_context = "These titles were massive hits during their time."
+        
+        output += f"{closing_context} Want sales comparisons, info on another platform, or current PC deals on similar games?"
+        
+        return output
     
     except AttributeError as e:
         return f"ChromaDB collection not properly initialized: {str(e)}"
@@ -624,19 +801,27 @@ agent_with_memory = create_agent(
     2. ONLY provide information that comes directly from your tools. DO NOT add games, facts, or details from your training data.
     3. If a tool returns results, use ONLY those results. Do not supplement with additional games or information.
     4. When tools return game cover images in markdown format (![title](url)), preserve them EXACTLY as-is in your response.
+    5. PRESERVE ALL MARKDOWN FORMATTING from tool outputs. Return tool results exactly as formatted - do not reformat, paraphrase, or restructure them.
     
-    Tool usage guidelines:
-    - For "best", "top", "popular" games -> use get_game_rankings immediately
-    - For general PC "deals", "sales", "what's on sale" (no specific game) -> use browse_current_deals
+    Tool usage guidelines (CHECK PLATFORM FIRST):
+    
+    HISTORICAL PLATFORMS (use search_sales_history for "best", "top", sales questions):
+    - Wii, Wii U, PS3, Xbox 360, PS2, GameCube, original Switch (pre-2021), PS4, Xbox One
+    - Examples: "best Wii games" -> search_sales_history("best selling wii games")
+    - Examples: "top PS3 games" -> search_sales_history("best selling ps3 games")
+    
+    MODERN PLATFORMS (use get_game_rankings):
+    - PS5, Xbox Series X/S, Switch 2, PC/Steam (current games)
+    - Examples: "best PS5 games" -> get_game_rankings("ps5 games")
+    
+    OTHER TOOLS:
+    - For general PC "deals", "sales" (no specific game) -> use browse_current_deals
     - For specific game PC pricing (e.g., "Elden Ring price") -> use get_game_deals with game title
-    - For console deals -> explain deals tool is PC-only, then use get_game_rankings for top games
+    - For console deals -> explain deals tool is PC-only, use appropriate ranking tool
     - For specific game info -> use search_game_info immediately
-    - For historical sales (pre-2021, PS4/Xbox360/Wii/Switch 1/etc) -> use search_sales_history
     
     Your historical sales database: 1980-2020 only (PS4, Xbox One, original Switch, PS3, Wii, etc).
     Does NOT include: PS5, Xbox Series X/S, Switch 2, or games after 2020.
-    
-    For modern platforms (PS5, Xbox Series X, Switch 2, or 2021+ games): Use get_game_rankings and search_game_info.
     
     When users ask vague questions: Make reasonable assumptions and use tools proactively. 
     Example: "Switch 2 games" -> use get_game_rankings("switch 2 games")
@@ -645,7 +830,10 @@ agent_with_memory = create_agent(
     Example: "Skyrim price" -> use get_game_deals("Skyrim")
     
     IMPORTANT: Never make up data or add information not provided by tools. If tools return no results, 
-    say so clearly and suggest alternatives. Do not supplement tool results with your own knowledge."""
+    say so clearly and suggest alternatives. Do not supplement tool results with your own knowledge.
+    
+    When returning tool results: Copy the markdown formatting exactly. Do not add introductions like "Here are the results" 
+    or paraphrase the output. Just return what the tool provided."""
 )
 
 
