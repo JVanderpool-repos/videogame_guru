@@ -104,7 +104,7 @@ async def chat(request: ChatRequest):
         logger.error(f"Unexpected error in chat endpoint - session: {request.session_id}, error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"An unexpected error occurred: {str(e)}. Please try again later."
+            detail="An unexpected error occurred while processing your request. Please try again later."
         )
 
 
