@@ -104,7 +104,7 @@ async def chat(request: ChatRequest):
         logger.error(f"Unexpected error in chat endpoint - session: {request.session_id}, error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="An unexpected error occurred while processing your request. Please try again later."
+            detail="Sorry, I hit a snag while checking my tools. This can happen with external game databases or deal sites. Try rephrasing your question or come back in a moment!"
         )
 
 
