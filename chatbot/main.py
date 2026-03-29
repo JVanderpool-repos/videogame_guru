@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+import logging
 import requests
 from langchain_core.tools import tool
 import chromadb
@@ -9,6 +10,13 @@ from chromadb.utils import embedding_functions
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 # gpt-4o-mini via GitHub Models
@@ -25,8 +33,12 @@ def search_game_info(game_title: str) -> str:
     platforms, and release date. Use when the user asks about a
     specific game's description, reviews, or general information."""
     try:
+        api_key = os.getenv("RAWG_API_KEY")
+        if not api_key:
+            return "RAWG API key is not configured. Please contact the administrator."
+        
         params = {
-            "key": os.getenv("RAWG_API_KEY"),
+            "key": api_key,
             "search": game_title,
             "page_size": 1
         }
@@ -55,10 +67,28 @@ def search_game_info(game_title: str) -> str:
             f"**Metacritic:** {g.get('metacritic', 'N/A')}"
         )
         return result
+    
     except requests.exceptions.HTTPError as e:
-        return f"RAWG API error: {str(e)}"
+        if e.response.status_code == 401:
+            return "RAWG API authentication failed. Invalid API key."
+        elif e.response.status_code == 403:
+            return "RAWG API access forbidden. Please check API key permissions."
+        elif e.response.status_code == 429:
+            return "RAWG API rate limit exceeded. Please try again in a few moments."
+        else:
+            return f"RAWG API error: {str(e)}"
+    
+    except requests.exceptions.Timeout:
+        return "RAWG API request timed out. Please try again."
+    
     except requests.exceptions.ConnectionError:
         return "Could not reach RAWG API. Check your connection."
+    
+    except KeyError as e:
+        return f"Unexpected response format from RAWG API. Missing field: {str(e)}"
+    
+    except Exception as e:
+        return f"Unexpected error searching for game info: {str(e)}"
 
 
 @tool
@@ -126,10 +156,23 @@ def browse_current_deals() -> str:
 
         return output
 
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 429:
+            return "CheapShark API rate limit exceeded. Please try again in a few moments."
+        else:
+            return f"CheapShark API error ({e.response.status_code}): {str(e)}"
+    
+    except requests.exceptions.Timeout:
+        return "CheapShark API request timed out. Please try again."
+    
     except requests.exceptions.ConnectionError:
         return "Could not reach CheapShark API. Try again shortly."
+    
+    except ValueError as e:
+        return f"Error processing deals data: {str(e)}"
+    
     except Exception as e:
-        return f"Error fetching current deals: {str(e)}"
+        return f"Unexpected error fetching current deals: {str(e)}"
 
 
 @tool
@@ -220,20 +263,81 @@ def get_game_deals(game_title: str) -> str:
 
         return output
 
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 429:
+            return f"CheapShark API rate limit exceeded. Please try again in a few moments."
+        else:
+            return f"CheapShark API error ({e.response.status_code}): {str(e)}"
+    
+    except requests.exceptions.Timeout:
+        return f"CheapShark API request timed out. Please try again."
+    
     except requests.exceptions.ConnectionError:
         return "Could not reach CheapShark API. Try again shortly."
+    
+    except ValueError as e:
+        return f"Error processing game price data: {str(e)}"
+    
+    except KeyError as e:
+        return f"Unexpected response format from CheapShark API. Missing field: {str(e)}"
+    
     except Exception as e:
-        return f"Error fetching prices: {str(e)}"
+        return f"Unexpected error fetching prices: {str(e)}"
 
 
 # IGDB uses Twitch OAuth, fetch a fresh token each time
 def get_igdb_token():
-    res = requests.post("https://id.twitch.tv/oauth2/token", params={
-        "client_id": os.getenv("IGDB_CLIENT_ID"),
-        "client_secret": os.getenv("IGDB_CLIENT_SECRET"),
-        "grant_type": "client_credentials"
-    })
-    return res.json()["access_token"]
+    """Get IGDB access token with comprehensive error handling."""
+    try:
+        logger.info("Requesting IGDB access token")
+        client_id = os.getenv("IGDB_CLIENT_ID")
+        client_secret = os.getenv("IGDB_CLIENT_SECRET")
+        
+        if not client_id or not client_secret:
+            logger.error("IGDB credentials not configured")
+            raise ValueError("IGDB credentials not configured. Please set IGDB_CLIENT_ID and IGDB_CLIENT_SECRET environment variables.")
+        
+        res = requests.post(
+            "https://id.twitch.tv/oauth2/token",
+            params={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "grant_type": "client_credentials"
+            },
+            timeout=10
+        )
+        res.raise_for_status()
+        
+        data = res.json()
+        if "access_token" not in data:
+            logger.error("IGDB OAuth response missing access_token")
+            raise ValueError("Invalid response from IGDB OAuth: missing access_token")
+        
+        logger.info("Successfully retrieved IGDB access token")
+        return data["access_token"]
+    
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 401:
+            logger.error("IGDB authentication failed: invalid credentials")
+            raise ValueError("IGDB authentication failed: Invalid client ID or secret")
+        elif e.response.status_code == 429:
+            logger.warning("IGDB rate limit exceeded")
+            raise ValueError("IGDB rate limit exceeded. Please try again later.")
+        else:
+            logger.error(f"IGDB OAuth HTTP error: {str(e)}")
+            raise ValueError(f"IGDB OAuth error: {str(e)}")
+    
+    except requests.exceptions.Timeout:
+        logger.error("IGDB authentication timeout")
+        raise ValueError("IGDB authentication timed out. Please try again.")
+    
+    except requests.exceptions.ConnectionError:
+        logger.error("IGDB authentication connection error")
+        raise ValueError("Could not connect to IGDB authentication service. Check your connection.")
+    
+    except Exception as e:
+        logger.error(f"Unexpected IGDB authentication error: {str(e)}")
+        raise ValueError(f"Unexpected IGDB authentication error: {str(e)}")
 
 
 @tool
@@ -427,8 +531,29 @@ def get_game_rankings(query: str) -> str:
             output += f"**{g['name']}** | Rating: {rating}/100 | Genres: {genres} | Platforms: {platforms}\n\n"
         return output
 
+    except ValueError as e:
+        # These are from get_igdb_token
+        return str(e)
+    
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 401:
+            return "IGDB authentication failed. Please check API credentials."
+        elif e.response.status_code == 429:
+            return "IGDB API rate limit exceeded. Please try again later."
+        else:
+            return f"IGDB API error ({e.response.status_code}): {str(e)}"
+    
+    except requests.exceptions.Timeout:
+        return "IGDB API request timed out. Please try again."
+    
+    except requests.exceptions.ConnectionError:
+        return "Could not connect to IGDB API. Please check your connection."
+    
+    except KeyError as e:
+        return f"Unexpected response format from IGDB. Missing field: {str(e)}"
+    
     except Exception as e:
-        return f"IGDB error: {str(e)}"
+        return f"Unexpected IGDB error: {str(e)}"
 
 
 # persistent chroma vector store for historical sales data
@@ -458,13 +583,28 @@ def search_sales_history(query: str) -> str:
     Does NOT include: PS5, Xbox Series X/S, Nintendo Switch 2, or games released after 2020.
     For newer platforms/games, use get_game_rankings or search_game_info instead."""
     try:
+        if not query or not query.strip():
+            return "Please provide a search query for sales history."
+        
         results = collection.query(query_texts=[query], n_results=5)
+        
+        if not results or "documents" not in results:
+            return "Unable to retrieve sales data. Database may be temporarily unavailable."
+        
         docs = results["documents"][0]
         if not docs:
             return "No sales data found for that query in the historical database (1980-2020)."
+        
         return "Historical sales data (1980-2020):\n" + "\n".join(f"- {d}" for d in docs)
+    
+    except AttributeError as e:
+        return f"ChromaDB collection not properly initialized: {str(e)}"
+    
+    except ConnectionError:
+        return "Could not connect to the sales database. Please try again."
+    
     except Exception as e:
-        return f"Vector search error: {str(e)}"
+        return f"Unexpected error searching sales history: {str(e)}"
 
 
 tools = [search_game_info, get_game_deals, browse_current_deals, get_game_rankings, search_sales_history]
