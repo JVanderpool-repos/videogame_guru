@@ -2,6 +2,13 @@
 
 An AI-powered video game assistant chatbot that helps you discover games, find deals, explore sales history, and get expert rankings. Built with LangChain agents, multiple gaming APIs, and a React frontend.
 
+##📺 Project Demo
+
+
+https://github.com/user-attachments/assets/08a95258-90f8-4ebf-ae05-02809525f9ea
+
+
+
 > **⚡ Quick Start**: See [QUICKSTART.md](QUICKSTART.md) for a condensed setup guide.
 
 ## ✨ Features
